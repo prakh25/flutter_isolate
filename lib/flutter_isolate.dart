@@ -8,13 +8,13 @@ import 'package:flutter/services.dart';
 
 class FlutterIsolate {
   /// Control port used to send control messages to the isolate.
-  SendPort? controlPort;
+  SendPort controlPort;
 
   /// Capability granting the ability to pause the isolate (not implemented)
-  Capability? pauseCapability;
+  Capability pauseCapability;
 
   /// Capability granting the ability to terminate the isolate (not implemented)
-  Capability? terminateCapability;
+  Capability terminateCapability;
 
   /// Creates and spawns a flutter isolate that shares the same code
   /// as the current isolate. The spawned isolate will be able to use flutter
@@ -23,21 +23,21 @@ class FlutterIsolate {
   static Future<FlutterIsolate> spawn<T>(
       void entryPoint(T message), T message) async {
     final userEntryPointId =
-        PluginUtilities.getCallbackHandle(entryPoint)!.toRawHandle();
+        PluginUtilities.getCallbackHandle(entryPoint).toRawHandle();
     final isolateId = Uuid().v4();
     final isolateResult = Completer<FlutterIsolate>();
     final setupReceivePort = ReceivePort();
 
     IsolateNameServer.registerPortWithName(
         setupReceivePort.sendPort, isolateId);
-    late StreamSubscription setupSubscription;
+    StreamSubscription setupSubscription;
     setupSubscription = setupReceivePort.listen((data) {
-      final portSetup = (data as List<Capability?>);
+      final portSetup = (data as List<Capability>);
       final setupPort = portSetup[0] as SendPort;
       final remoteIsolate = FlutterIsolate._(
-          isolateId, portSetup[1] as SendPort?, portSetup[2], portSetup[3]);
+          isolateId, portSetup[1] as SendPort, portSetup[2], portSetup[3]);
 
-      setupPort.send(<Object?>[userEntryPointId, message]);
+      setupPort.send(<Object>[userEntryPointId, message]);
 
       setupSubscription.cancel();
       setupReceivePort.close();
@@ -45,7 +45,7 @@ class FlutterIsolate {
     });
     _control.invokeMethod("spawn_isolate", {
       "entry_point":
-          PluginUtilities.getCallbackHandle(_flutterIsolateEntryPoint)!
+          PluginUtilities.getCallbackHandle(_flutterIsolateEntryPoint)
               .toRawHandle(),
       "isolate_id": isolateId
     });
@@ -54,14 +54,14 @@ class FlutterIsolate {
 
   bool get _isCurrentIsolate =>
       _isolateId == null ||
-      _current != null && _current!._isolateId == _isolateId;
+      _current != null && _current._isolateId == _isolateId;
 
   /// Requests the isolate to pause. This uses the underlying isolates pause
   /// implementation to pause the isolate from with the pausing isolate
   /// otherwises uses a SendPort to pass through a pause requres to the target
   void pause() => _isCurrentIsolate
       ? Isolate.current.pause()
-      : Isolate(controlPort!,
+      : Isolate(controlPort,
               pauseCapability: pauseCapability,
               terminateCapability: terminateCapability)
           .pause(pauseCapability);
@@ -72,10 +72,10 @@ class FlutterIsolate {
   /// ports will not be serviced when an isolate is paused.
   void resume() => _isCurrentIsolate
       ? Isolate.current.resume(Capability())
-      : Isolate(controlPort!,
+      : Isolate(controlPort,
               pauseCapability: pauseCapability,
               terminateCapability: terminateCapability)
-          .resume(pauseCapability!);
+          .resume(pauseCapability);
 
   /// Requestes to terminate the flutter isolate. As the isolate that is
   /// created is backed by a FlutterBackgroundView/FlutterEngine for the
@@ -87,8 +87,8 @@ class FlutterIsolate {
       ? _control.invokeMethod("kill_isolate", {"isolate_id": _isolateId})
       : Isolate.current.kill();
 
-  String? _isolateId;
-  static FlutterIsolate? _current;
+  String _isolateId;
+  static FlutterIsolate _current;
   static final _control = MethodChannel("com.rmawatson.flutterisolate/control");
   static final _event = EventChannel("com.rmawatson.flutterisolate/event");
 
@@ -99,18 +99,18 @@ class FlutterIsolate {
       this.terminateCapability]);
 
   static FlutterIsolate get current =>
-      _current != null ? _current! : FlutterIsolate._();
+      _current != null ? _current : FlutterIsolate._();
   static void _isolateInitialize() {
     WidgetsFlutterBinding.ensureInitialized();
 
-    late StreamSubscription eventSubscription;
+    StreamSubscription eventSubscription;
     eventSubscription = _event.receiveBroadcastStream().listen((isolateId) {
       _current = FlutterIsolate._(isolateId, null, null);
       final sendPort =
-          IsolateNameServer.lookupPortByName(_current!._isolateId!)!;
+          IsolateNameServer.lookupPortByName(_current._isolateId);
       final setupReceivePort = ReceivePort();
-      IsolateNameServer.removePortNameMapping(_current!._isolateId!);
-      sendPort.send(<Capability?>[
+      IsolateNameServer.removePortNameMapping(_current._isolateId);
+      sendPort.send(<Capability>[
         setupReceivePort.sendPort,
         Isolate.current.controlPort,
         Isolate.current.pauseCapability,
@@ -118,13 +118,13 @@ class FlutterIsolate {
       ]);
       eventSubscription.cancel();
 
-      late StreamSubscription setupSubscription;
+      StreamSubscription setupSubscription;
       setupSubscription = setupReceivePort.listen((data) {
-        final args = data as List<Object?>;
+        final args = data as List<Object>;
         final userEntryPointHandle = args[0] as int;
         final userMessage = args[1];
         Function userEntryPoint = PluginUtilities.getCallbackFromHandle(
-            CallbackHandle.fromRawHandle(userEntryPointHandle))!;
+            CallbackHandle.fromRawHandle(userEntryPointHandle));
         setupSubscription.cancel();
         setupReceivePort.close();
         userEntryPoint(userMessage);
